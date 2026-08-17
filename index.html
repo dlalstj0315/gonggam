@@ -164,11 +164,17 @@ let endings=JSON.parse(localStorage.getItem("hospitalEndings")||"[]");
 let achievements=JSON.parse(localStorage.getItem("hospitalAchievements")||"[]");
 let secretItems=JSON.parse(localStorage.getItem("hospitalSecrets")||"[]");
 let secretDoor=false, survivalSeconds=0, totalDeaths=0;
+let visitedStages=JSON.parse(localStorage.getItem("hospitalVisitedStages")||"[]");
 const stageNames=["입원동","지하 병동","수술동","격리동","지하 연구실"];
 function stageName(n){return stageNames[n-1]||"미지의 구역";}
 
 function buildMap(n){
  stage=n; hasKey=false; hasCode=false;
+ if(!visitedStages.includes(n)){
+  visitedStages.push(n);
+  localStorage.setItem("hospitalVisitedStages",JSON.stringify(visitedStages));
+  if(visitedStages.length>=5) unlock("explorer");
+ }
  player.x=170; player.y=800; player.stamina=100;
  stageWalls=[
   {x:0,y:0,w:WW,h:45},{x:0,y:WH-45,w:WW,h:45},
@@ -192,8 +198,9 @@ function buildMap(n){
  if(n>=2)mapObjects.push({x:900,y:1250,t:"note"});
  if(n>=3)mapObjects.push({x:1350,y:750,t:"puzzle"});
  if(n>=4)mapObjects.push({x:1850,y:700,t:"cabinet"});
+ if(n>=3)mapObjects.push({x:WW-320,y:520,t:"wrongDoor"});
  if(n===5)mapObjects.push({x:2050,y:1200,t:"banana"});
- if(n>=2)mapObjects.push({x:300+n*90,y:650,t:"secret"});
+ mapObjects.push({x:300+n*90,y:650,t:"secret"});
  if(n===5)mapObjects.push({x:2150,y:1200,t:"secretDoor"});
  ghost.x=WW-650; ghost.y=n%2?450:1150;
  ghost.active=false; ghost.speed=1.25+n*.28; ghostClock=0;
@@ -282,7 +289,7 @@ function collide(x,y){
 
 function update(){
  survivalSeconds+=1/60;
- if(!flashlight)unlock("darktime");
+ if(!flashlight && survivalSeconds>=30)unlock("darktime");
  let dx=0,dy=0;
  if(keys.w||keys.arrowup)dy--;
  if(keys.s||keys.arrowdown)dy++;
@@ -333,7 +340,10 @@ function updateGhost(){
  if(d<650){
   ghost.x+=dx/d*ghost.speed;
   ghost.y+=dy/d*ghost.speed;
- }else ghost.active=false;
+ }else{
+  if(d>800) unlock("runner");
+  ghost.active=false;
+ }
  const danger=document.getElementById("danger"), hb=document.getElementById("heartbeat");
  const intensity=Math.max(0,1-d/500);
  danger.style.opacity=String(intensity*.9);
@@ -351,9 +361,14 @@ function interact(){
    showMsg("🕵️ 숨겨진 단서를 발견했다! ("+secretItems.length+"/5)");
    if(secretItems.length>=5){unlock("truth");}
   }
+  else if(o.t==="wrongDoor"){
+   unlock("wrong");
+   showMsg("🚪 잘못된 문이다! 안쪽에서 문이 잠겼다.");
+   scare();
+  }
   else if(o.t==="secretDoor"){
    if(secretItems.length>=5){
-    secretDoor=true; unlock("secretdoor");
+    secretDoor=true; unlock("secretdoor"); unlock("ghost");
     unlockEnding("secret","🔴 비밀 엔딩","문 너머에는 병원의 모든 기록이 있었다. 그리고 마지막 기록에는 당신의 이름이 적혀 있었다.");
    }else showMsg("🔒 이상한 문이다. 아직 단서가 부족하다.");
   }
@@ -369,6 +384,11 @@ function interact(){
     if(code==="4729")showMsg("🔓 잠금이 해제됐다.");
     else{showMsg("❌ 틀렸다.");scare();}
    }
+  }
+  else if(o.t==="note"){
+   unlock("notes");
+   if(stage===5)unlock("lab");
+   showMsg("🗒️ 오래된 실험 기록을 발견했다.");
   }
   else if(o.t==="battery"){battery=Math.min(100,battery+40);o.t="empty";showMsg("🔋 배터리를 충전했다.");}
   else if(o.t==="banana"){
@@ -417,6 +437,7 @@ function startGhostWarning(){
    document.body.classList.remove("shake");
    ghost.active=true;
    warning=false;
+   unlock("firstghost");
    showMsg("👻 !!! 귀신이 나타났다!");
  },1600);
 }
@@ -429,7 +450,15 @@ function scare(){
 }
 
 function draw(){
- ctx.fillStyle="#171b20";
+ const themes=[
+  ["#20262c","#293037","#3a424a","#3f474f"],
+  ["#24201f","#322a28","#49403b","#514842"],
+  ["#20262d","#28333a","#394852","#42535d"],
+  ["#29201f","#362727","#4a3333","#543838"],
+  ["#1d2228","#252d35","#37414b","#46525e"]
+ ];
+ const th=themes[Math.min(stage-1,4)];
+ ctx.fillStyle=th[0];
  ctx.fillRect(0,0,W,H);
  ctx.save();
  ctx.translate(-cam.x,-cam.y);
@@ -444,21 +473,24 @@ function draw(){
  for(let y=45;y<WH-45;y+=50){ctx.beginPath();ctx.moveTo(45,y);ctx.lineTo(WW-45,y);ctx.stroke()}
 
  /* 방별 밝은 바닥 */
- ctx.fillStyle="#293037";
+ ctx.fillStyle=th[1];
  ctx.fillRect(60,340,650,850);
- ctx.fillStyle="#2c343a";
+ ctx.fillStyle=th[2];
  ctx.fillRect(1120,340,340,560);
- ctx.fillStyle="#2b3339";
+ ctx.fillStyle=th[1];
  ctx.fillRect(1540,340,850,700);
 
  for(const w of (stageWalls.length?stageWalls:walls)){
-  ctx.fillStyle="#3f474f";
+  ctx.fillStyle=th[3];
   ctx.fillRect(w.x,w.y,w.w,w.h);
   ctx.strokeStyle="#66707a";
   ctx.strokeRect(w.x,w.y,w.w,w.h);
  }
 
  ctx.textAlign="center";
+ ctx.font="bold 28px Arial";
+ ctx.fillStyle="#d9e0e7";
+ ctx.fillText("ZONE "+stage+" · "+stageName(stage),player.x,player.y-55);
  for(const o of (mapObjects.length?mapObjects:objects)){
   if(o.t==="empty")continue;
   let icon="",color="#c3cad1";
